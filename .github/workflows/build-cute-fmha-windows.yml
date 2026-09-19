@@ -19,14 +19,6 @@ on:
         options:
           - '3.12'
           - '3.13'
-      oneapi_version:
-        description: 'Intel oneAPI version'
-        type: choice
-        required: true
-        default: '2026.1'
-        options:
-          - '2026.0'
-          - '2026.1'
 
 jobs:
   build-windows:
@@ -49,7 +41,7 @@ jobs:
           ref: 2fc09973bfdf15755090fcb0e3b6ad236408a992
           path: llm-scaler\third_party\sycl-tla
 
-      - name: Install Intel oneAPI
+      - name: Install Intel oneAPI 2026.1
         run: |
           wget -q https://registrationcenter-download.intel.com/akdlm/irc_nas/19600/w_oneapi-hpc-toolkit-p-2026.1.0.100_offline.exe -O oneapi-installer.exe
           .\oneapi-installer.exe --silent --eula accept --components compiler;dnnl --install-dir "C:\Program Files (x86)\Intel\oneAPI"
