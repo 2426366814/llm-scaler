@@ -46,11 +46,20 @@ jobs:
           ref: 2fc09973bfdf15755090fcb0e3b6ad236408a992
           path: llm-scaler/third_party/sycl-tla
 
-      - name: Setup Intel oneAPI
-        uses: intel/oneapi-setup-action@v1
+      - name: Install Intel oneAPI
+        run: |
+          wget -q https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB -O /tmp/intel-gpg-key.pub
+          sudo apt-key add /tmp/intel-gpg-key.pub
+          echo "deb https://apt.repos.intel.com/oneapi all main" | sudo tee /etc/apt/sources.list.d/oneAPI.list
+          sudo apt update
+          sudo apt install -y intel-oneapi-compiler-dpcpp-cpp-2026.1.0 intel-oneapi-dnnl-2026.1.0
+
+      - name: Checkout sycl-tla (for CUTE FMHA)
+        uses: actions/checkout@v4
         with:
-          version: ${{ github.event.inputs.oneapi_version }}
-          components: compiler dnnl
+          repository: intel/sycl-tla
+          ref: 2fc09973bfdf15755090fcb0e3b6ad236408a992
+          path: llm-scaler/third_party/sycl-tla
 
       - name: Setup Python
         uses: actions/setup-python@v5

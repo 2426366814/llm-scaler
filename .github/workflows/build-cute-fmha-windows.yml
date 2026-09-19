@@ -49,11 +49,17 @@ jobs:
           ref: 2fc09973bfdf15755090fcb0e3b6ad236408a992
           path: llm-scaler\third_party\sycl-tla
 
-      - name: Setup Intel oneAPI
-        uses: intel/oneapi-setup-action@v1
+      - name: Install Intel oneAPI
+        run: |
+          wget -q https://registrationcenter-download.intel.com/akdlm/irc_nas/19600/w_oneapi-hpc-toolkit-p-2026.1.0.100_offline.exe -O oneapi-installer.exe
+          .\oneapi-installer.exe --silent --eula accept --components compiler;dnnl --install-dir "C:\Program Files (x86)\Intel\oneAPI"
+
+      - name: Checkout sycl-tla (for CUTE FMHA)
+        uses: actions/checkout@v4
         with:
-          version: ${{ github.event.inputs.oneapi_version }}
-          components: compiler dnnl
+          repository: intel/sycl-tla
+          ref: 2fc09973bfdf15755090fcb0e3b6ad236408a992
+          path: llm-scaler\third_party\sycl-tla
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -66,7 +72,6 @@ jobs:
         uses: microsoft/setup-msbuild@v2
         with:
           vs-version: '[17.0,]'
-          vs-prerelease: false
 
       - name: Install PyTorch XPU
         run: pip install torch==${{ github.event.inputs.torch_version }} --index-url https://download.pytorch.org/whl/xpu

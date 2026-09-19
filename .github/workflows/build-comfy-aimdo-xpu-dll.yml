@@ -20,7 +20,7 @@ jobs:
       run:
         shell: cmd
     steps:
-      - name: Checkout comfy-aimdo-xpu
+      - name: Checkout comfy-aimdo-xpu (xpu-level-zero-vbar branch)
         uses: actions/checkout@v4
         with:
           repository: xiangyuT/comfy-aimdo-xpu
@@ -28,24 +28,22 @@ jobs:
           path: comfy-aimdo-xpu
           submodules: recursive
 
-      - name: Checkout Detours (required for Windows build)
+      - name: Checkout Detours
         uses: actions/checkout@v4
         with:
           repository: microsoft/Detours
           ref: master
           path: detours
 
-      - name: Setup Intel oneAPI
-        uses: intel/oneapi-setup-action@v1
-        with:
-          version: ${{ github.event.inputs.oneapi_version }}
-          components: compiler dnnl
+      - name: Install Intel oneAPI
+        run: |
+          wget -q https://registrationcenter-download.intel.com/akdlm/irc_nas/19600/w_oneapi-hpc-toolkit-p-2026.1.0.100_offline.exe -O oneapi-installer.exe
+          .\oneapi-installer.exe --silent --eula accept --components compiler;dnnl --install-dir "C:\Program Files (x86)\Intel\oneAPI"
 
       - name: Setup Visual Studio
         uses: microsoft/setup-msbuild@v2
         with:
           vs-version: '[17.0,]'
-          vs-prerelease: false
 
       - name: Build Detours
         working-directory: detours
