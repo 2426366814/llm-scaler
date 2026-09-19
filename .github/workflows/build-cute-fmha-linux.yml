@@ -23,7 +23,7 @@ on:
 jobs:
   build-linux:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
     steps:
       - name: Checkout llm-scaler
         uses: actions/checkout@v4
@@ -68,9 +68,10 @@ jobs:
           python-version: ${{ github.event.inputs.python_version }}
           cache: pip
 
-      - name: Install PyTorch XPU
+      - name: Install PyTorch XPU and numpy
         run: |
           pip install torch==${{ github.event.inputs.torch_version }} --index-url https://download.pytorch.org/whl/xpu
+          pip install numpy
 
       - name: Set up build environment
         run: |
@@ -86,8 +87,10 @@ jobs:
           OMNI_XPU_DEVICE: bmg
           OMNI_XPU_REQUIRE_CUTE: 1
           OMNI_XPU_ENABLE_ONEDNN: 1
+          CUTLASS_SYCL_ROOT: ${{ github.workspace }}/llm-scaler/third_party/sycl-tla
         run: |
           source /opt/intel/oneapi/setvars.sh --force
+          export CUTLASS_SYCL_ROOT=${{ github.workspace }}/llm-scaler/third_party/sycl-tla
           python -m pip wheel . --no-build-isolation --no-deps -w wheelhouse
           ls -la wheelhouse/
 
