@@ -38,13 +38,21 @@ jobs:
           ref: 2fc09973bfdf15755090fcb0e3b6ad236408a992
           path: llm-scaler/third_party/sycl-tla
 
-      - name: Install Intel oneAPI 2026.0 (for oneDNN 3.11.2)
+      - name: Install Intel oneAPI 2026.1 (main repo)
         run: |
           wget -q https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB -O /tmp/intel-gpg-key.pub
           sudo apt-key add /tmp/intel-gpg-key.pub
-          echo "deb https://apt.repos.intel.com/oneapi/2026.0 all main" | sudo tee /etc/apt/sources.list.d/oneAPI-2026.0.list
+          echo "deb https://apt.repos.intel.com/oneapi all main" | sudo tee /etc/apt/sources.list.d/oneAPI.list
           sudo apt update
           sudo apt install -y intel-oneapi-compiler-dpcpp-cpp intel-oneapi-dnnl intel-oneapi-dnnl-devel
+
+      - name: Patch kernel to accept oneDNN 3.11.4
+        working-directory: llm-scaler/omni/omni_xpu_kernel
+        run: |
+          # Patch setup.py to accept oneDNN 3.11.4 (from oneAPI 2026.1)
+          sed -i 's/expected_onednn_version = "3.11.2"/expected_onednn_version = "3.11.4"/g' setup.py
+          sed -i 's/expected_onednn_python_version = "2026.0.0"/expected_onednn_python_version = "2026.1.0"/g' setup.py
+          cat setup.py | grep -A2 -B2 "expected_onednn"
 
       - name: Checkout sycl-tla (for CUTE FMHA)
         uses: actions/checkout@v4
