@@ -46,6 +46,10 @@ jobs:
           sudo apt update
           sudo apt install -y intel-oneapi-compiler-dpcpp-cpp intel-oneapi-dnnl
 
+      - name: Install oneDNN Python packages
+        run: |
+          pip install onednn==2026.0.0 onednn-devel==2026.0.0
+
       - name: Checkout sycl-tla (for CUTE FMHA)
         uses: actions/checkout@v4
         with:
@@ -68,6 +72,8 @@ jobs:
           source /opt/intel/oneapi/setvars.sh --force
           echo "ONEDNNROOT=/opt/intel/oneapi/dnnl/latest" >> $GITHUB_ENV
           echo "CUTLASS_SYCL_ROOT=${{ github.workspace }}/llm-scaler/third_party/sycl-tla" >> $GITHUB_ENV
+          echo "ONEDNN_INCLUDE=/opt/intel/oneapi/dnnl/latest/include" >> $GITHUB_ENV
+          echo "ONEDNN_LIB=/opt/intel/oneapi/dnnl/latest/lib" >> $GITHUB_ENV
 
       - name: Build omni_xpu_kernel with CUTE FMHA
         working-directory: llm-scaler/omni/omni_xpu_kernel
