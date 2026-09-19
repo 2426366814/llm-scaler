@@ -24,6 +24,9 @@ jobs:
   build-linux:
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    container:
+      image: intel/oneapi-basekit:devel-ubuntu22.04
+      options: --user root
     steps:
       - name: Checkout llm-scaler
         uses: actions/checkout@v4
@@ -38,21 +41,18 @@ jobs:
           ref: 2fc09973bfdf15755090fcb0e3b6ad236408a992
           path: llm-scaler/third_party/sycl-tla
 
-      - name: Install Intel oneAPI 2026.1 (main repo)
+      - name: Install Python and dependencies
         run: |
-          wget -q https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB -O /tmp/intel-gpg-key.pub
-          sudo apt-key add /tmp/intel-gpg-key.pub
-          echo "deb https://apt.repos.intel.com/oneapi all main" | sudo tee /etc/apt/sources.list.d/oneAPI.list
-          sudo apt update
-          sudo apt install -y intel-oneapi-compiler-dpcpp-cpp intel-oneapi-dnnl intel-oneapi-dnnl-devel
+          apt-get update && apt-get install -y python3.12 python3.12-venv python3.12-dev python3-pip
+          python3.12 -m venv /opt/venv
+          /opt/venv/bin/pip install torch==${{ github.event.inputs.torch_version }} --index-url https://download.pytorch.org/whl/xpu
+          /opt/venv/bin/pip install numpy
 
-      - name: Patch kernel to accept oneDNN 3.11.4 (from oneAPI 2026.1)
+      - name: Patch kernel to accept oneDNN 3.11.4
         working-directory: llm-scaler/omni/omni_xpu_kernel
         run: |
-          # Patch setup.py to accept oneDNN 3.11.4 (from oneAPI 2026.1)
           sed -i 's/LINUX_ONEDNN_PACKAGE_VERSION = "2026.0.0"/LINUX_ONEDNN_PACKAGE_VERSION = "2026.1.0"/g' setup.py
           sed -i 's/LINUX_VALIDATED_ONEDNN_VERSION = (3, 11, 2)/LINUX_VALIDATED_ONEDNN_VERSION = (3, 11, 4)/g' setup.py
-          echo "=== Patched setup.py ==="
           grep -n "LINUX_ONEDNN_PACKAGE_VERSION\|LINUX_VALIDATED_ONEDNN_VERSION" setup.py
 
       - name: Checkout sycl-tla (for CUTE FMHA)
@@ -62,17 +62,6 @@ jobs:
           ref: 2fc09973bfdf15755090fcb0e3b6ad236408a992
           path: llm-scaler/third_party/sycl-tla
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ github.event.inputs.python_version }}
-          cache: pip
-
-      - name: Install PyTorch XPU and numpy
-        run: |
-          pip install torch==${{ github.event.inputs.torch_version }} --index-url https://download.pytorch.org/whl/xpu
-          pip install numpy
-
       - name: Set up build environment
         run: |
           source /opt/intel/oneapi/setvars.sh --force
@@ -81,7 +70,7 @@ jobs:
           echo "ONEDNN_INCLUDE=/opt/intel/oneapi/dnnl/latest/include" >> $GITHUB_ENV
           echo "ONEDNN_LIB=/opt/intel/oneapi/dnnl/latest/lib" >> $GITHUB_ENV
 
-      - name: Build omni_xpu_kernel with CUTE FMHA
+      - name: Build omni_xpu_kernel with CUTE FMHA (verbose)
         working-directory: llm-scaler/omni/omni_xpu_kernel
         env:
           OMNI_XPU_DEVICE: bmg
@@ -91,7 +80,8 @@ jobs:
         run: |
           source /opt/intel/oneapi/setvars.sh --force
           export CUTLASS_SYCL_ROOT=${{ github.workspace }}/llm-scaler/third_party/sycl-tla
-          python -m pip wheel . --no-build-isolation --no-deps -w wheelhouse
+          # Build with verbose output to see icpx errors
+          /opt/venv/bin/python -m pip wheel . --no-build-isolation --no-deps -w wheelhouse -v 2>&1 | tee build.log
           ls -la wheelhouse/
 
       - name: Upload Linux wheels
