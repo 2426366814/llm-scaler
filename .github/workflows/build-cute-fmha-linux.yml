@@ -1,0 +1,87 @@
+name: Build omni_xpu_kernel CUTE FMHA (Linux)
+
+on:
+  workflow_dispatch:
+    inputs:
+      torch_version:
+        description: 'PyTorch XPU version'
+        type: choice
+        required: true
+        default: '2.13.0+xpu'
+        options:
+          - '2.12.0+xpu'
+          - '2.13.0+xpu'
+      python_version:
+        description: 'Python version'
+        type: choice
+        required: true
+        default: '3.13'
+        options:
+          - '3.12'
+          - '3.13'
+      oneapi_version:
+        description: 'Intel oneAPI version'
+        type: choice
+        required: true
+        default: '2026.1'
+        options:
+          - '2026.0'
+          - '2026.1'
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout llm-scaler
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          path: llm-scaler
+
+      - name: Checkout sycl-tla (for CUTE FMHA)
+        uses: actions/checkout@v4
+        with:
+          repository: intel/sycl-tla
+          ref: 2fc09973bfdf15755090fcb0e3b6ad236408a992
+          path: llm-scaler/third_party/sycl-tla
+
+      - name: Setup Intel oneAPI
+        uses: intel/oneapi-setup-action@v1
+        with:
+          version: ${{ github.event.inputs.oneapi_version }}
+          components: compiler dnnl
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ github.event.inputs.python_version }}
+          cache: pip
+
+      - name: Install PyTorch XPU
+        run: |
+          pip install torch==${{ github.event.inputs.torch_version }} --index-url https://download.pytorch.org/whl/xpu
+
+      - name: Set up build environment
+        run: |
+          source /opt/intel/oneapi/setvars.sh --force
+          echo "ONEDNNROOT=/opt/intel/oneapi/dnnl/latest" >> $GITHUB_ENV
+          echo "CUTLASS_SYCL_ROOT=${{ github.workspace }}/llm-scaler/third_party/sycl-tla" >> $GITHUB_ENV
+
+      - name: Build omni_xpu_kernel with CUTE FMHA
+        working-directory: llm-scaler/omni/omni_xpu_kernel
+        env:
+          OMNI_XPU_DEVICE: bmg
+          OMNI_XPU_REQUIRE_CUTE: 1
+          OMNI_XPU_ENABLE_ONEDNN: 1
+        run: |
+          source /opt/intel/oneapi/setvars.sh --force
+          python -m pip wheel . --no-build-isolation --no-deps -w wheelhouse
+          ls -la wheelhouse/
+
+      - name: Upload Linux wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: omni_xpu_kernel-linux-py${{ github.event.inputs.python_version }}-${{ github.event.inputs.torch_version }}
+          path: llm-scaler/omni/omni_xpu_kernel/wheelhouse/*.whl
+          retention-days: 30

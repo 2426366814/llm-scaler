@@ -1,0 +1,70 @@
+name: Build comfy-aimdo-xpu DLL (Windows)
+
+on:
+  workflow_dispatch:
+    inputs:
+      oneapi_version:
+        description: 'Intel oneAPI version (must match kernel build)'
+        type: choice
+        required: true
+        default: '2026.1'
+        options:
+          - '2026.0'
+          - '2026.1'
+
+jobs:
+  build-windows-dll:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: cmd
+    steps:
+      - name: Checkout comfy-aimdo-xpu
+        uses: actions/checkout@v4
+        with:
+          repository: xiangyuT/comfy-aimdo-xpu
+          ref: dev/xpu-level-zero-vbar
+          path: comfy-aimdo-xpu
+          submodules: recursive
+
+      - name: Checkout Detours (required for Windows build)
+        uses: actions/checkout@v4
+        with:
+          repository: microsoft/Detours
+          ref: master
+          path: detours
+
+      - name: Setup Intel oneAPI
+        uses: intel/oneapi-setup-action@v1
+        with:
+          version: ${{ github.event.inputs.oneapi_version }}
+          components: compiler dnnl
+
+      - name: Setup Visual Studio
+        uses: microsoft/setup-msbuild@v2
+        with:
+          vs-version: '[17.0,]'
+          vs-prerelease: false
+
+      - name: Build Detours
+        working-directory: detours
+        run: |
+          call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvarsall.bat" x64
+          nmake
+
+      - name: Build comfy-aimdo-xpu DLL
+        working-directory: comfy-aimdo-xpu
+        run: |
+          call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat" --force
+          set "DETOURS_ROOT=%GITHUB_WORKSPACE%\detours"
+          set "DETOURS_INCLUDE=%DETOURS_ROOT%\include"
+          set "DETOURS_LIB_DIR=%DETOURS_ROOT%\lib.X64"
+          call scripts\build-windows-xpu.cmd
+
+      - name: Upload aimdo_xpu.dll
+        uses: actions/upload-artifact@v4
+        with:
+          name: aimdo_xpu-windows-dll
+          path: comfy-aimdo-xpu\comfy_aimdo\aimdo_xpu.dll
+          retention-days: 30

@@ -1,0 +1,226 @@
+name: Build All (Matrix: Linux/Windows x Python x Torch)
+
+on:
+  workflow_dispatch:
+    inputs:
+      torch_version:
+        description: 'PyTorch XPU version'
+        type: choice
+        required: true
+        default: '2.13.0+xpu'
+        options:
+          - '2.12.0+xpu'
+          - '2.13.0+xpu'
+      python_version:
+        description: 'Python version'
+        type: choice
+        required: true
+        default: '3.13'
+        options:
+          - '3.12'
+          - '3.13'
+      oneapi_version:
+        description: 'Intel oneAPI version'
+        type: choice
+        required: true
+        default: '2026.1'
+        options:
+          - '2026.0'
+          - '2026.1'
+      build_targets:
+        description: 'Components to build'
+        type: choice
+        required: true
+        default: 'all'
+        options:
+          - 'all'
+          - 'kernel-linux'
+          - 'kernel-windows'
+          - 'aimdo-dll'
+
+jobs:
+  # ========== Linux Kernel Build ==========
+  build-kernel-linux:
+    if: inputs.build_targets == 'all' || inputs.build_targets == 'kernel-linux'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout llm-scaler
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          path: llm-scaler
+
+      - name: Checkout sycl-tla
+        uses: actions/checkout@v4
+        with:
+          repository: intel/sycl-tla
+          ref: 2fc09973bfdf15755090fcb0e3b6ad236408a992
+          path: llm-scaler/third_party/sycl-tla
+
+      - name: Setup Intel oneAPI
+        uses: intel/oneapi-setup-action@v1
+        with:
+          version: ${{ github.event.inputs.oneapi_version }}
+          components: compiler dnnl
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ github.event.inputs.python_version }}
+          cache: pip
+
+      - name: Install PyTorch XPU
+        run: pip install torch==${{ github.event.inputs.torch_version }} --index-url https://download.pytorch.org/whl/xpu
+
+      - name: Build omni_xpu_kernel (CUTE FMHA)
+        working-directory: llm-scaler/omni/omni_xpu_kernel
+        env:
+          OMNI_XPU_DEVICE: bmg
+          OMNI_XPU_REQUIRE_CUTE: 1
+          OMNI_XPU_ENABLE_ONEDNN: 1
+        run: |
+          source /opt/intel/oneapi/setvars.sh --force
+          python -m pip wheel . --no-build-isolation --no-deps -w wheelhouse
+          ls -la wheelhouse/
+
+      - name: Upload Linux kernel wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-linux-py${{ github.event.inputs.python_version }}-${{ github.event.inputs.torch_version }}
+          path: llm-scaler/omni/omni_xpu_kernel/wheelhouse/*.whl
+          retention-days: 30
+
+  # ========== Windows Kernel Build ==========
+  build-kernel-windows:
+    if: inputs.build_targets == 'all' || inputs.build_targets == 'kernel-windows'
+    runs-on: windows-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: cmd
+    steps:
+      - name: Checkout llm-scaler
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          path: llm-scaler
+
+      - name: Checkout sycl-tla
+        uses: actions/checkout@v4
+        with:
+          repository: intel/sycl-tla
+          ref: 2fc09973bfdf15755090fcb0e3b6ad236408a992
+          path: llm-scaler\third_party\sycl-tla
+
+      - name: Setup Intel oneAPI
+        uses: intel/oneapi-setup-action@v1
+        with:
+          version: ${{ github.event.inputs.oneapi_version }}
+          components: compiler dnnl
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ github.event.inputs.python_version }}
+          cache: pip
+          architecture: x64
+
+      - name: Setup Visual Studio
+        uses: microsoft/setup-msbuild@v2
+        with:
+          vs-version: '[17.0,]'
+
+      - name: Install PyTorch XPU
+        run: pip install torch==${{ github.event.inputs.torch_version }} --index-url https://download.pytorch.org/whl/xpu
+
+      - name: Build omni_xpu_kernel (CUTE FMHA)
+        working-directory: llm-scaler\omni\omni_xpu_kernel
+        env:
+          OMNI_XPU_DEVICE: bmg
+          OMNI_XPU_REQUIRE_CUTE: 1
+          OMNI_XPU_ENABLE_ONEDNN: 1
+        run: |
+          call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat" --force
+          python -m pip wheel . --no-build-isolation --no-deps -w wheelhouse
+          dir wheelhouse\
+
+      - name: Upload Windows kernel wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-windows-py${{ github.event.inputs.python_version }}-${{ github.event.inputs.torch_version }}
+          path: llm-scaler\omni\omni_xpu_kernel\wheelhouse\*.whl
+          retention-days: 30
+
+  # ========== Windows comfy-aimdo-xpu DLL ==========
+  build-aimdo-dll-windows:
+    if: inputs.build_targets == 'all' || inputs.build_targets == 'aimdo-dll'
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: cmd
+    steps:
+      - name: Checkout comfy-aimdo-xpu (xpu-level-zero-vbar branch)
+        uses: actions/checkout@v4
+        with:
+          repository: xiangyuT/comfy-aimdo-xpu
+          ref: dev/xpu-level-zero-vbar
+          path: comfy-aimdo-xpu
+          submodules: recursive
+
+      - name: Checkout Detours
+        uses: actions/checkout@v4
+        with:
+          repository: microsoft/Detours
+          ref: master
+          path: detours
+
+      - name: Setup Intel oneAPI
+        uses: intel/oneapi-setup-action@v1
+        with:
+          version: ${{ github.event.inputs.oneapi_version }}
+          components: compiler dnnl
+
+      - name: Setup Visual Studio
+        uses: microsoft/setup-msbuild@v2
+        with:
+          vs-version: '[17.0,]'
+
+      - name: Build Detours
+        working-directory: detours
+        run: |
+          call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvarsall.bat" x64
+          nmake
+
+      - name: Build comfy-aimdo-xpu DLL
+        working-directory: comfy-aimdo-xpu
+        run: |
+          call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat" --force
+          set "DETOURS_ROOT=%GITHUB_WORKSPACE%\detours"
+          set "DETOURS_INCLUDE=%DETOURS_ROOT%\include"
+          set "DETOURS_LIB_DIR=%DETOURS_ROOT%\lib.X64"
+          call scripts\build-windows-xpu.cmd
+
+      - name: Upload aimdo_xpu.dll
+        uses: actions/upload-artifact@v4
+        with:
+          name: aimdo_xpu-windows-dll
+          path: comfy-aimdo-xpu\comfy_aimdo\aimdo_xpu.dll
+          retention-days: 30
+
+  # ========== Summary ==========
+  summary:
+    needs: [build-kernel-linux, build-kernel-windows, build-aimdo-dll-windows]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build Summary
+        run: |
+          echo "## Build Summary"
+          echo ""
+          echo "| Component | OS | Status | Artifact |"
+          echo "|-----------|----|--------|----------|"
+          echo "| omni_xpu_kernel (CUTE FMHA) | Linux | ${{ needs.build-kernel-linux.result }} | kernel-linux-py${{ github.event.inputs.python_version }}-${{ github.event.inputs.torch_version }} |"
+          echo "| omni_xpu_kernel (CUTE FMHA) | Windows | ${{ needs.build-kernel-windows.result }} | kernel-windows-py${{ github.event.inputs.python_version }}-${{ github.event.inputs.torch_version }} |"
+          echo "| comfy-aimdo-xpu DLL | Windows | ${{ needs.build-aimdo-dll-windows.result }} | aimdo_xpu-windows-dll |"
