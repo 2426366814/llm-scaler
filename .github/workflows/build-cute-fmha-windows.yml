@@ -15,15 +15,15 @@ on:
         description: 'Python version'
         type: choice
         required: true
-        default: '3.13'
+        default: '3.12'
         options:
+          - '3.11'
           - '3.12'
-          - '3.13'
 
 jobs:
   build-windows:
     runs-on: windows-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
     defaults:
       run:
         shell: cmd
@@ -41,10 +41,10 @@ jobs:
           ref: 2fc09973bfdf15755090fcb0e3b6ad236408a992
           path: llm-scaler\third_party\sycl-tla
 
-      - name: Install Intel oneAPI 2026.1
+      - name: Download and Install Intel oneAPI 2026.1
         run: |
           wget -q https://registrationcenter-download.intel.com/akdlm/irc_nas/19600/w_oneapi-hpc-toolkit-p-2026.1.0.100_offline.exe -O oneapi-installer.exe
-          .\oneapi-installer.exe --silent --eula accept --components compiler;dnnl --install-dir "C:\Program Files (x86)\Intel\oneAPI"
+          .\oneapi-installer.exe --silent --eula accept --components compiler;dnnl;dnnl-devel --install-dir "C:\Program Files (x86)\Intel\oneAPI"
 
       - name: Checkout sycl-tla (for CUTE FMHA)
         uses: actions/checkout@v4
@@ -65,8 +65,30 @@ jobs:
         with:
           vs-version: '[17.0,]'
 
-      - name: Install PyTorch XPU
-        run: pip install torch==${{ github.event.inputs.torch_version }} --index-url https://download.pytorch.org/whl/xpu
+      - name: Patch kernel to accept oneDNN 3.11.4
+        working-directory: llm-scaler\omni\omni_xpu_kernel
+        run: |
+          sed -i "s/LINUX_ONEDNN_PACKAGE_VERSION = \"2026.0.0\"/LINUX_ONEDNN_PACKAGE_VERSION = \"2026.1.0\"/g" setup.py
+          sed -i "s/LINUX_VALIDATED_ONEDNN_VERSION = (3, 11, 2)/LINUX_VALIDATED_ONEDNN_VERSION = (3, 11, 4)/g" setup.py
+          echo "=== Patched setup.py ==="
+          findstr "LINUX_ONEDNN_PACKAGE_VERSION\|LINUX_VALIDATED_ONEDNN_VERSION" setup.py
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ github.event.inputs.python_version }}
+          cache: pip
+          architecture: x64
+
+      - name: Setup Visual Studio
+        uses: microsoft/setup-msbuild@v2
+        with:
+          vs-version: '[17.0,]'
+
+      - name: Install PyTorch XPU and numpy
+        run: |
+          pip install torch==${{ github.event.inputs.torch_version }} --index-url https://download.pytorch.org/whl/xpu
+          pip install numpy
 
       - name: Set up build environment
         run: |
@@ -77,11 +99,12 @@ jobs:
           set "OMNI_XPU_REQUIRE_CUTE=1"
           set "OMNI_XPU_ENABLE_ONEDNN=1"
 
-      - name: Build omni_xpu_kernel with CUTE FMHA
+      - name: Build omni_xpu_kernel with CUTE FMHA (verbose)
         working-directory: llm-scaler\omni\omni_xpu_kernel
         run: |
           call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat" --force
-          python -m pip wheel . --no-build-isolation --no-deps -w wheelhouse
+          set "CUTLASS_SYCL_ROOT=%GITHUB_WORKSPACE%\llm-scaler\third_party\sycl-tla"
+          python -m pip wheel . --no-build-isolation --no-deps -w wheelhouse -v 2>&1 | tee build.log
           dir wheelhouse\
 
       - name: Upload Windows wheels
