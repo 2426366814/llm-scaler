@@ -26,7 +26,7 @@ jobs:
     timeout-minutes: 120
     defaults:
       run:
-        shell: cmd
+        shell: pwsh
     steps:
       - name: Checkout llm-scaler
         uses: actions/checkout@v4
@@ -43,7 +43,11 @@ jobs:
 
       - name: Download and Install Intel oneAPI 2026.1
         run: |
-          wget -q https://registrationcenter-download.intel.com/akdlm/irc_nas/19600/w_oneapi-hpc-toolkit-p-2026.1.0.100_offline.exe -O oneapi-installer.exe
+          $url = "https://registrationcenter-download.intel.com/akdlm/irc_nas/19600/w_oneapi-hpc-toolkit-p-2026.1.0.100_offline.exe"
+          $out = "oneapi-installer.exe"
+          Write-Host "Downloading Intel oneAPI installer..."
+          Invoke-WebRequest -Uri $url -OutFile $out -UseBasicParsing
+          Write-Host "Installing Intel oneAPI..."
           .\oneapi-installer.exe --silent --eula accept --components compiler;dnnl;dnnl-devel --install-dir "C:\Program Files (x86)\Intel\oneAPI"
 
       - name: Checkout sycl-tla (for CUTE FMHA)
@@ -68,10 +72,9 @@ jobs:
       - name: Patch kernel to accept oneDNN 3.11.4
         working-directory: llm-scaler\omni\omni_xpu_kernel
         run: |
-          sed -i "s/LINUX_ONEDNN_PACKAGE_VERSION = \"2026.0.0\"/LINUX_ONEDNN_PACKAGE_VERSION = \"2026.1.0\"/g" setup.py
-          sed -i "s/LINUX_VALIDATED_ONEDNN_VERSION = (3, 11, 2)/LINUX_VALIDATED_ONEDNN_VERSION = (3, 11, 4)/g" setup.py
-          echo "=== Patched setup.py ==="
-          findstr "LINUX_ONEDNN_PACKAGE_VERSION\|LINUX_VALIDATED_ONEDNN_VERSION" setup.py
+          (Get-Content setup.py) -replace 'LINUX_ONEDNN_PACKAGE_VERSION = "2026.0.0"', 'LINUX_ONEDNN_PACKAGE_VERSION = "2026.1.0"' | Set-Content setup.py
+          (Get-Content setup.py) -replace 'LINUX_VALIDATED_ONEDNN_VERSION = \(3, 11, 2\)', 'LINUX_VALIDATED_ONEDNN_VERSION = (3, 11, 4)' | Set-Content setup.py
+          Select-String "LINUX_ONEDNN_PACKAGE_VERSION|LINUX_VALIDATED_ONEDNN_VERSION" setup.py
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -92,19 +95,19 @@ jobs:
 
       - name: Set up build environment
         run: |
-          call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat" --force
-          set "ONEDNNROOT=C:\Program Files (x86)\Intel\oneAPI\dnnl\latest"
-          set "CUTLASS_SYCL_ROOT=%GITHUB_WORKSPACE%\llm-scaler\third_party\sycl-tla"
-          set "OMNI_XPU_DEVICE=bmg"
-          set "OMNI_XPU_REQUIRE_CUTE=1"
-          set "OMNI_XPU_ENABLE_ONEDNN=1"
+          & "C:\Program Files (x86)\Intel\oneAPI\setvars.bat" --force
+          $env:ONEDNNROOT = "C:\Program Files (x86)\Intel\oneAPI\dnnl\latest"
+          $env:CUTLASS_SYCL_ROOT = "$env:GITHUB_WORKSPACE\llm-scaler\third_party\sycl-tla"
+          $env:OMNI_XPU_DEVICE = "bmg"
+          $env:OMNI_XPU_REQUIRE_CUTE = "1"
+          $env:OMNI_XPU_ENABLE_ONEDNN = "1"
 
       - name: Build omni_xpu_kernel with CUTE FMHA (verbose)
         working-directory: llm-scaler\omni\omni_xpu_kernel
         run: |
-          call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat" --force
-          set "CUTLASS_SYCL_ROOT=%GITHUB_WORKSPACE%\llm-scaler\third_party\sycl-tla"
-          python -m pip wheel . --no-build-isolation --no-deps -w wheelhouse -v 2>&1 | tee build.log
+          & "C:\Program Files (x86)\Intel\oneAPI\setvars.bat" --force
+          $env:CUTLASS_SYCL_ROOT = "$env:GITHUB_WORKSPACE\llm-scaler\third_party\sycl-tla"
+          python -m pip wheel . --no-build-isolation --no-deps -w wheelhouse -v 2>&1 | Tee-Object build.log
           dir wheelhouse\
 
       - name: Upload Windows wheels
