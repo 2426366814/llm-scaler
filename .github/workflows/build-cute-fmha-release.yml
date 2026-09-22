@@ -29,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     container:
-      image: intel/oneapi-basekit:2026.0-devel-ubuntu22.04
+      image: intel/oneapi-basekit:2025.3.2-devel-ubuntu22.04
       options: --user root
     steps:
       - name: Checkout llm-scaler
@@ -71,13 +71,6 @@ jobs:
           echo "CUTLASS_SYCL_ROOT=${{ github.workspace }}/llm-scaler/third_party/sycl-tla" >> $GITHUB_ENV
           echo "ONEDNN_INCLUDE=/opt/intel/oneapi/dnnl/latest/include" >> $GITHUB_ENV
           echo "ONEDNN_LIB=/opt/intel/oneapi/dnnl/latest/lib" >> $GITHUB_ENV
-
-      - name: Patch kernel for oneDNN 3.11.4
-        working-directory: llm-scaler/omni/omni_xpu_kernel
-        run: |
-          sed -i 's/LINUX_ONEDNN_PACKAGE_VERSION = "2026.0.0"/LINUX_ONEDNN_PACKAGE_VERSION = "2026.1.0"/g' setup.py
-          sed -i 's/LINUX_VALIDATED_ONEDNN_VERSION = (3, 11, 2)/LINUX_VALIDATED_ONEDNN_VERSION = (3, 11, 4)/g' setup.py
-          grep -n "LINUX_ONEDNN_PACKAGE_VERSION\|LINUX_VALIDATED_ONEDNN_VERSION" setup.py
 
       - name: Build omni_xpu_kernel with CUTE FMHA
         working-directory: llm-scaler/omni/omni_xpu_kernel
