@@ -29,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     container:
-      image: intel/oneapi-basekit:2025.3.2-devel-ubuntu22.04
+      image: intel/oneapi-basekit:2025.3.2-0-devel-ubuntu22.04
       options: --user root
     steps:
       - name: Checkout llm-scaler
