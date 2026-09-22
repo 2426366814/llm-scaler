@@ -46,12 +46,16 @@ jobs:
           ref: 2fc09973bfdf15755090fcb0e3b6ad236408a992
           path: llm-scaler/third_party/sycl-tla
 
-      - name: Install Python and dependencies
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ github.event.inputs.python_version }}
+          cache: pip
+
+      - name: Install PyTorch XPU
         run: |
-          apt-get update && apt-get install -y python3.12 python3.12-venv python3.12-dev
-          python3.12 -m venv /opt/venv
-          /opt/venv/bin/pip install torch==${{ github.event.inputs.torch_version }} --index-url https://download.pytorch.org/whl/xpu
-          /opt/venv/bin/pip install numpy
+          pip install torch==${{ github.event.inputs.torch_version }} --index-url https://download.pytorch.org/whl/xpu
+          pip install numpy
 
       - name: Checkout sycl-tla
         uses: actions/checkout@v4
@@ -92,107 +96,10 @@ jobs:
         with:
           name: omni_xpu_kernel-linux-py${{ github.event.inputs.python_version }}-${{ github.event.inputs.torch_version }}
           path: llm-scaler/omni/omni_xpu_kernel/wheelhouse/*.whl
-          retention-days: 90
-
-  build-windows:
-    runs-on: windows-latest
-    timeout-minutes: 120
-    defaults:
-      run:
-        shell: pwsh
-    steps:
-      - name: Checkout llm-scaler
-        uses: actions/checkout@v4
-        with:
-          repository: intel/llm-scaler
-          submodules: recursive
-          path: llm-scaler
-
-      - name: Checkout sycl-tla
-        uses: actions/checkout@v4
-        with:
-          repository: intel/sycl-tla
-          ref: 2fc09973bfdf15755090fcb0e3b6ad236408a992
-          path: llm-scaler\third_party\sycl-tla
-
-      - name: Download and Install Intel oneAPI 2026.1
-        run: |
-          $url = "https://registrationcenter-download.intel.com/akdlm/irc_nas/19600/w_oneapi-hpc-toolkit-p-2026.1.0.100_offline.exe"
-          $out = "oneapi-installer.exe"
-          Write-Host "Downloading Intel oneAPI installer..."
-          Invoke-WebRequest -Uri $url -OutFile $out -UseBasicParsing
-          Write-Host "Installing Intel oneAPI..."
-          .\oneapi-installer.exe --silent --eula accept --components compiler;dnnl;dnnl-devel --install-dir "C:\Program Files (x86)\Intel\oneAPI"
-
-      - name: Checkout sycl-tla
-        uses: actions/checkout@v4
-        with:
-          repository: intel/sycl-tla
-          ref: 2fc09973bfdf15755090fcb0e3b6ad236408a992
-          path: llm-scaler\third_party\sycl-tla
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ github.event.inputs.python_version }}
-          cache: pip
-          architecture: x64
-
-      - name: Setup Visual Studio
-        uses: microsoft/setup-msbuild@v2
-        with:
-          vs-version: '[17.0,]'
-
-      - name: Patch kernel for oneDNN 3.11.4
-        working-directory: llm-scaler\omni\omni_xpu_kernel
-        run: |
-          (Get-Content setup.py) -replace 'LINUX_ONEDNN_PACKAGE_VERSION = "2026.0.0"', 'LINUX_ONEDNN_PACKAGE_VERSION = "2026.1.0"' | Set-Content setup.py
-          (Get-Content setup.py) -replace 'LINUX_VALIDATED_ONEDNN_VERSION = (3, 11, 2)', 'LINUX_VALIDATED_ONEDNN_VERSION = (3, 11, 4)' | Set-Content setup.py
-          Select-String "LINUX_ONEDNN_PACKAGE_VERSION|LINUX_VALIDATED_ONEDNN_VERSION" setup.py
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ github.event.inputs.python_version }}
-          cache: pip
-          architecture: x64
-
-      - name: Setup Visual Studio
-        uses: microsoft/setup-msbuild@v2
-        with:
-          vs-version: '[17.0,]'
-
-      - name: Install PyTorch XPU and numpy
-        run: |
-          pip install torch==${{ github.event.inputs.torch_version }} --index-url https://download.pytorch.org/whl/xpu
-          pip install numpy
-
-      - name: Set up build environment
-        run: |
-          & "C:\Program Files (x86)\Intel\oneAPI\setvars.bat" --force
-          $env:ONEDNNROOT = "C:\Program Files (x86)\Intel\oneAPI\dnnl\latest"
-          $env:CUTLASS_SYCL_ROOT = "$env:GITHUB_WORKSPACE\llm-scaler\third_party\sycl-tla"
-          $env:OMNI_XPU_DEVICE = "bmg"
-          $env:OMNI_XPU_REQUIRE_CUTE = "1"
-          $env:OMNI_XPU_ENABLE_ONEDNN = "1"
-
-      - name: Build omni_xpu_kernel with CUTE FMHA (verbose)
-        working-directory: llm-scaler\omni\omni_xpu_kernel
-        run: |
-          & "C:\Program Files (x86)\Intel\oneAPI\setvars.bat" --force
-          $env:CUTLASS_SYCL_ROOT = "$env:GITHUB_WORKSPACE\llm-scaler\third_party\sycl-tla"
-          python -m pip wheel . --no-build-isolation --no-deps -w wheelhouse -v 2>&1 | Tee-Object build.log
-          dir wheelhouse\
-
-      - name: Upload Windows wheel
-        uses: actions/upload-artifact@v4
-        with:
-          name: omni_xpu_kernel-windows-py${{ github.event.inputs.python_version }}-${{ github.event.inputs.torch_version }}
-          path: llm-scaler\omni\omni_xpu_kernel\wheelhouse\*.whl
           retention-days: 30
 
   release:
-    needs: [build-linux, build-windows]
+    needs: [build-linux]
     runs-on: ubuntu-latest
     if: ${{ github.event.inputs.create_release }}
     steps:
@@ -202,19 +109,12 @@ jobs:
           pattern: omni_xpu_kernel-linux-*
           path: artifacts/linux
 
-      - name: Download Windows artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: omni_xpu_kernel-windows-*
-          path: artifacts/windows
-
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: omni_xpu_kernel-${{ github.event.inputs.torch_version }}-${{ github.run_number }}
-          name: 'omni_xpu_kernel CUTE FMHA ${{ github.event.inputs.torch_version }}'
+          name: 'omni_xpu_kernel CUTE FMHA ${{ github.event.inputs.torch_version }} (Linux only)'
           files: |
             artifacts/linux/*.whl
-            artifacts/windows/*.whl
           draft: false
           prerelease: false
